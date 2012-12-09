@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 __name    = "timetracker"
-__version = "1.0.0"
+__version = "1.1.0"
 __date    = "09.12.2012"
 __author  = "Bystroushaak"
 __email   = "bystrousak@kitakitsune.org"
@@ -91,8 +91,7 @@ def analyzeLogFiles(watchlist, loglist):
 
 	data = {}
 	for project in watchlist:
-		data[project] = 0
-		data[project + "_lt"] = 0
+		data[project] = SavedRecord(project)
 
 	# read saved data from logfile
 	for line in loglist:
@@ -101,15 +100,8 @@ def analyzeLogFiles(watchlist, loglist):
 			continue
 
 		# get saved results
-		line  = line.split(" ")
-		saved = int(line[1])
-		last  = int(line[2])
-
-		# join rest of the path back
-		line = " ".join(line[3:]).strip()
-
-		data[line + "_lt"] = last
-		data[line] = saved
+		sr = SavedRecord(line)
+		data[sr.project] = sr
 
 	# process logfile for file access
 	for project in filter(lambda line: not line.startswith("saved"), watchlist):
@@ -123,11 +115,31 @@ def analyzeLogFiles(watchlist, loglist):
 			line = line[11:]
 
 			# count only records which diff more than MIN_TIME_DIFF
-			if line.startswith(project) and abs(date - data[project + "_lt"]) > MIN_TIME_DIFF:
-				data[project] += 1
-				data[project + "_lt"] = date
+			if line.startswith(project) and abs(date - data[project].last) > MIN_TIME_DIFF:
+				data[project].saved += 1
+				data[project].last   = date
 
 	return data
+
+
+class SavedRecord:
+	"Used for parsing records saved in loglist."
+
+	def __init__(self, line):
+		if not line.startswith("saved") or line.strip() == "":
+			self.saved = 0
+			self.last  = 0
+			self.project = line.strip()
+		else:
+			line  = line.split(" ")
+			self.saved = int(line[1])
+			self.last  = int(line[2])
+
+			# join rest of the path back
+			self.project = " ".join(line[3:]).strip()
+
+	def __str__(self):
+		return "saved " + str(self.saved) + " " + str(self.last) + " " + self.project
 
 
 class EventHandler(pyinotify.ProcessEvent):
@@ -240,11 +252,11 @@ if __name__ == '__main__':
 		
 		# print results and save it 
 		new_ll = []
-		for project in filter(lambda x: not x.endswith("_lt"), data.keys()):
-			writeln("Aprox. " + str(data[project] * MIN_TIME_DIFF) + "s\t" + project)
+		for project in data.keys():
+			writeln("Aprox. " + str(data[project].saved * MIN_TIME_DIFF) + "s\t" + project)
 
 			# memorize results for next time
-			new_ll.append("saved " + str(data[project]) + " " + str(data[project + "_lt"]) + " " + project)
+			new_ll.append(str(data[project]))
 
 		# save results - this saves a lot of time and some diskspace
 		saveList(WATCHLOG_FN, new_ll)
